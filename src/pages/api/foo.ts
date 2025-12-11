@@ -1,9 +1,8 @@
 // Next.js API route support: https://nextjs.org/docs/api-routes/introduction
 import type { NextApiRequest, NextApiResponse } from "next";
-import { Queue, QueueEvents} from 'bullmq';
-import { Worker, Job } from 'bullmq';
-import { myQueue } from '@/lib/queue/foo-queue';
+import { Queue } from 'bullmq';
 import { connection } from '../../lib/connection';
+import { myQueue } from '../../lib/queue/foo-queue';
 
 
 export default async function handler(
@@ -16,46 +15,44 @@ export default async function handler(
     }
 
     try {
+       // const myQueue = new Queue('foo', {connection});
+        
+        // Get the base URL for API calls
+        const baseUrl = req.headers.host 
+            ? `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`
+            : 'http://localhost:3000';
 
-        const myQueue = new Queue('foo', {connection});
-        const [bar, baz] = await Promise.all([
-            myQueue.add('bar', { foo: 'bar' }),
-            myQueue.add('baz', { qux: 'baz' })
+        // Add two jobs: one to call save-bar API, one to call save-baz API
+        const [barJob, bazJob] = await Promise.all([
+            myQueue.add('call-save-bar', { 
+                apiEndpoint: `${baseUrl}/api/save-bar`,
+                method: 'POST'
+            }),
+            myQueue.add('call-save-baz', { 
+                apiEndpoint: `${baseUrl}/api/save-baz`,
+                method: 'POST'
+            })
         ]);
-        const worker = new Worker(
-            'foo',
-            async job => { 
-            // Will print { foo: 'bar'} for the first job
-            // and { qux: 'baz' } for the second.
-              console.log(job.data);
-            },
-            { connection },
-          );
-          
-          worker.on('completed', job => {
-          console.log(`${job.id} has completed!`);
-          });
-          
-          worker.on('failed', (job: any, err) => {
-          console.log(`${job.id} has failed with ${err.message}`);
-          });
 
         res.status(200).json({
             success: true,
-            message: 'Both jobs triggered successfully',
+            message: 'Both jobs added to queue successfully',
             jobs: [
               {
-                jobId: bar,
+                jobId: barJob.id,
+                name: 'call-save-bar',
               },
               {
-                jobId: baz,
+                jobId: bazJob.id,
+                name: 'call-save-baz',
               }
             ],
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error triggering jobs:', error);
-        res.status(500).json({ error: 'Failed to trigger jobs' });
+        res.status(500).json({ 
+            error: 'Failed to trigger jobs',
+            message: error.message 
+        });
     }
-  
-  
 }
